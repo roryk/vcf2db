@@ -201,7 +201,8 @@ class VCFDB(object):
     _black_list = []
 
     def __init__(self, vcf_path, db_path, ped_path=None, blobber=pack_blob,
-                 black_list=None, expand=None, impacts_extras=None, aok=False):
+                 black_list=None, expand=None, impacts_extras=None, aok=False,
+                 prioritize_canonical=False):
         self.vcf_path = vcf_path
         self.db_path = get_dburl(db_path)
         self.aok = aok or []
@@ -213,6 +214,7 @@ class VCFDB(object):
         self.af_cols = []  # track these to set to -1
         self.extra_columns = []
         self.impacts_extras = set(map(clean, impacts_extras or []))
+        self.prioritize_canonical = prioritize_canonical
 
         self.blobber = blobber
         self.ped_path = ped_path
@@ -334,7 +336,7 @@ class VCFDB(object):
 
         for variant, impacts in map(gene_info, ((v,
                      self.impacts_headers, self.blobber, self.gt_cols, keys,
-                     has_samples, self.stringers, self.extra_columns, self.impacts_extras) for
+                                                 has_samples, self.stringers, self.extra_columns, self.impacts_extras, self.prioritize_canonical) for
                      v in variants)
                      ):
             # set afs columns to -1 by default.
@@ -798,12 +800,12 @@ KEY_2_CLASS = {
 def gene_info(d_and_impacts_headers):
     # this is parallelized as it's only simple objects and the gene impacts
     # stuff is slow.
-    d, impacts_headers, blobber, gt_cols, req_cols, has_samples, stringers, extra_columns, impacts_extras = d_and_impacts_headers
+    d, impacts_headers, blobber, gt_cols, req_cols, has_samples, stringers, extra_columns, impacts_extras, prioritize_canonical = d_and_impacts_headers
     impacts = []
     for k, cls in KEY_2_CLASS.items():
         if not k in d: continue
         dk = from_bytes(d[k]).split(',')
-        impacts.extend(cls(e, impacts_headers[k]) for e in dk)
+        impacts.extend(cls(e, impacts_headers[k], prioritize_canonical=prioritize_canonical) for e in dk)
         del d[k] # save some memory
 
     top = geneimpacts.Effect.top_severity(impacts)
@@ -903,6 +905,7 @@ if __name__ == "__main__":
             "the field can be suffixed with a type of ':i' or ':f' to indicate int or float to "
             "override the default of string. e.g. AF:f ")
     p.add_argument("--legacy-compression", action='store_true', default=False)
+    p.add_argument("--prioritize-canonical", action='store_true', default=False)
 
     p.add_argument("--expand",
                    action='append',
@@ -915,4 +918,4 @@ if __name__ == "__main__":
     main_blobber = pack_blob if a.legacy_compression else snappy_pack_blob
 
     VCFDB(a.VCF, a.db, a.ped, black_list=a.info_exclude, expand=a.expand, blobber=main_blobber,
-          impacts_extras=a.impacts_field, aok=a.a_ok)
+          impacts_extras=a.impacts_field, aok=a.a_ok, prioritize_canonical=a.prioritize_canonical)
